@@ -20,6 +20,14 @@ export namespace beeway {
     export interface ResponseStatus extends Response {
         status: "enroute"|"accepted"|"delivered"|"undeliverable"|"expired"|"rejected"|"unknown"
     }
+    export interface ResposeBalance extends Response {
+        balance: string
+    }
+    export interface Provider {
+        send(params:beeway.Request): Promise<ResponseSend>;
+        status(id: string): Promise<ResponseStatus>;
+        balance(): Promise<ResposeBalance>
+    }
 }
 export class BeewayError extends Error {
     public code?: number;
@@ -29,7 +37,7 @@ export class BeewayError extends Error {
         this.code = code;
     }
 }
-export class Beeway {
+class Beeway {
     private defaultOpts: Omit<beeway.Options, "token"> = {
         entry: "https://my.beeway.com.ua/api/sms"
     }
@@ -69,7 +77,7 @@ export class Beeway {
     /**
      * Get account balance
      */
-    public async balance() {
+    public async balance(): Promise<beeway.ResposeBalance> {
         const {body} = await this.fetch(
             `${this.opts.entry}/${this.opts.token}/balance`,
             "get"
