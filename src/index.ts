@@ -29,7 +29,7 @@ export class BeewayError extends Error {
         this.code = code;
     }
 }
-class Beeway {
+export class Beeway {
     private defaultOpts: Omit<beeway.Options, "token"> = {
         entry: "https://my.beeway.com.ua/api/sms"
     }
