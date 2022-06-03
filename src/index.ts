@@ -11,22 +11,61 @@ export namespace beeway {
         message: string,
         from?:string
     }
+    export interface RequestViber extends Request{
+        sms?:string,
+        vtime?:string
+    }
+
+    /**
+     * рассылки работают с 10:00 до 20:00
+     */
+    export interface RequestBulk {
+        label: string,
+        start?: Date,
+        end?: Date,
+        from?: string,
+        messages: {
+            to: string,
+            message: string,
+            messageId?: string
+        }[]
+    }
     export interface Response {
         errors?: string
     }
     export interface ResponseSend extends Response {
-        id: string
+        id: string,
     }
+
+    /**
+     * «enroute» - принято/ожидает отправки,
+     * «accepted» - отправлено в сеть
+     * «delivered» - доставлено,
+     * «undeliverable» - доставка невозможна,
+     * «expired» - истек срок доставки,
+     * «rejected» - отклонено сетью
+     * «unknown» - Сбой сети при доставке SMS
+     */
     export interface ResponseStatus extends Response {
         status: "enroute"|"accepted"|"delivered"|"undeliverable"|"expired"|"rejected"|"unknown"
     }
-    export interface ResposeBalance extends Response {
+    export interface ResponseBalance extends Response {
         balance: string
+    }
+    export interface ResponseBulk extends Response {
+        result: {
+            id: string,
+            messageId?: string,
+            parts_count: number,
+            status: ResponseStatus["status"]
+        }[]
     }
     export interface Provider {
         send(params:beeway.Request): Promise<ResponseSend>;
+        viber(params:beeway.RequestViber): Promise<ResponseSend>;
         status(id: string): Promise<ResponseStatus>;
-        balance(): Promise<ResposeBalance>
+        statusViber(id: string): Promise<ResponseStatus>;
+        balance(): Promise<ResponseBalance>
     }
 }
 export class BeewayError extends Error {
@@ -39,7 +78,7 @@ export class BeewayError extends Error {
 }
 class Beeway {
     private defaultOpts: Omit<beeway.Options, "token"> = {
-        entry: "https://my.beeway.com.ua/api/sms"
+        entry: "https://my.beeway.com.ua/api"
     }
     private opts: Required<beeway.Options>;
 
@@ -48,12 +87,26 @@ class Beeway {
     }
 
     /**
-     * Send single notification
-     * @param params
+     * Send single sms notification
      */
     public async send(params:beeway.Request): Promise<beeway.ResponseSend> {
         const {body} = await this.fetch(
-            `${this.opts.entry}/${this.opts.token}/send`,
+            `${this.opts.entry}/sms/${this.opts.token}/send`,
+            "get",
+            {
+                from: this.opts.from || "",
+                ...params
+            }
+        );
+        return {...(body || {})};
+    }
+
+    /**
+     * Send notification to viber messenger
+     */
+    public async viber(params:beeway.RequestViber): Promise<beeway.ResponseSend> {
+        const {body} = await this.fetch(
+            `${this.opts.entry}/viber/${this.opts.token}/send`,
             "get",
             {
                 from: this.opts.from || "",
@@ -68,8 +121,48 @@ class Beeway {
      */
     public async status(id: string): Promise<beeway.ResponseStatus> {
         const {body} = await this.fetch(
-            `${this.opts.entry}/${this.opts.token}/status/${id}`,
+            `${this.opts.entry}/sms/${this.opts.token}/status/${id}`,
             "get"
+        );
+        return {...(body || {})};
+    }
+
+    /**
+     * Request status by notification id
+     */
+    public async statusViber(id: string): Promise<beeway.ResponseStatus> {
+        const {body} = await this.fetch(
+            `${this.opts.entry}/viber/${this.opts.token}/status/${id}`,
+            "get"
+        );
+        return {...(body || {})};
+    }
+
+    /**
+     * Send bulk sms
+     * From 1000 sms
+     */
+    public async bulk(params:beeway.RequestBulk): Promise<beeway.ResponseBulk> {
+        if(!params.messages?.length) {
+            return {
+                result: []
+            } as beeway.ResponseBulk
+        }
+
+        const defaultEndDate = new Date();
+        defaultEndDate.setHours(new Date().getHours() + 3);
+        const {body} = await this.fetch(
+            `${this.opts.entry}/sms/${this.opts.token}/bulk`,
+            "post",
+            {
+                api_key: this.opts.token,
+                bulk_name: params.label,
+                start_date: this.toBeewayDate(params.start || new Date()),
+                start_time: this.toBeewayTime(params.start || new Date()),
+                end_time: this.toBeewayTime(params.end || defaultEndDate),
+                from: this.opts.from || params.from,
+                messages: params.messages
+            }
         );
         return {...(body || {})};
     }
@@ -77,9 +170,9 @@ class Beeway {
     /**
      * Get account balance
      */
-    public async balance(): Promise<beeway.ResposeBalance> {
+    public async balance(): Promise<beeway.ResponseBalance> {
         const {body} = await this.fetch(
-            `${this.opts.entry}/${this.opts.token}/balance`,
+            `${this.opts.entry}/sms/${this.opts.token}/balance`,
             "get"
         );
         return {...(body || {})};
@@ -106,6 +199,17 @@ class Beeway {
             throw new BeewayError(body.errors, response.status);
         }
         return {response, body};
+    }
+
+    private pad(value: number): string {
+        return ("0" + value.toString()).slice(-2);
+    }
+
+    private toBeewayDate(now: Date): string {
+        return `${this.pad(now.getDate())}.${this.pad(now.getMonth()+1)}.${now.getFullYear()}`;
+    }
+    private toBeewayTime(now: Date) {
+        return `${this.pad(now.getHours())}:${this.pad(now.getMinutes())}`;
     }
 }
 export const beeway = (opts: beeway.Options) => new Beeway(opts);
