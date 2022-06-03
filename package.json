@@ -1,6 +1,6 @@
 {
   "name": "ts-beeway",
-  "version": "0.0.3",
+  "version": "0.1.0",
   "description": "Send sms by beeway.com.ua",
   "main": "index.js",
   "types": "index.d.ts",
